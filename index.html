@@ -193,121 +193,6 @@ async function loadStoreMaster(){
     return{ok:false,error:String(e)};
   }
 }
-const SHEET_ID='1XcIEMidT8WBRITwzNK098UWMez8ES7M20ooex5fsbig';
-const MONTH_LABELS={'April':'Apr','May':'May','June':'Jun'};
-const BRAND_ALIASES=[
-  [/BLUE\s*STONE/i,'BLUESTONE'],
-  [/CAR[AE]TLANE/i,'CARATLANE'],
-  [/GO\s*COLOU?RS?/i,'GO COLOURS'],
-  [/^MIA\b/i,'MIA']
-];
-const STORE_TABS=["CHN - T NAGAR","CHN - THORAIPAKKAM","PDC - PROVIDENCE MALL","PDC - MISSION STREET","KRM-AMBEDKAR ROAD","BLR - JAYNAGAR","BLR - BASAWESHWAR NAGAR ","BLR - VEGA CITY MALL ","BLR - DVG ROAD","MGL - CITY CENTER MALL","MYS - DEVRAJ URS ROAD ","MYS - MALL OF MYSORE ","MYS - NEXUS MALL","UDP - MAIN MARKET","MGL - BALMATTA ","BLR - NEXUS KORAMANGALA MALL","BLR - SARJAPUR MAIN ROAD","MGL - NEXUS FIZA MALL ","BLR - HSR LAYOUT ","BLR - RR NAGAR ","BLR - KATHRIGUPPE","KCH - LULU MALL","BLR - FORUM SOUTH BANGALORE","BLR - ROYAL MEENAKSHI MALL","KCH - MG ROAD ","KCH - FORUM MALL ","BLR - 4TH BLOCK JAYANAGAR ","TRV - LULU MALL","BLR-SAHAKAR NAGAR","BLR-RMZ","BLR-MOA","BLR-HENNUR","BR-BEL ROAD","BLR-KAMANHALLI","HBL-KPR","HBL-GKL","BLR-COMMERCIAL STREET","BGM-AMBEDKAR ROAD","BGM-MAHATMA PHULE ROAD","AHM - ALPHA MALL","CDR - ELANTE MALL","DEL - KAMLA NAGAR","DB - MALL BHOPAL","GWT - GS ROAD","IDR - PHOENIX CITADEL MALL","IDR - SCH140","IDR - SNEH NAGAR","KPR - RAJARAMPURI","LUK - PHOENIX PALASSIO MALL","MUM - R CITY MALL","PUN - PIMPRI CHINCHWAD","PMC - KURLA MUM","PUN - PHOENIX MALL VIMAN NAGAR","PUN - KOREGAON PARK","PUN - MALL OF MELLENIUM","BLR - MALLESWARAM","BLR - ARS COMPLEX MALLESHWARAM","BLR - MANTRI MALL","BLR - FORUM SHANTINIKETAN MALL","BLR - ORION MALL","BLR - INDIRANAGAR"," BLR - KR PURAM","BLR-PHOENIX MALL WHITEFILED","BLR- WHITEFIELD MAIN ROD","HSP-VIJAYANAGAR COLLEGE ROAD","BLR-BROOKEFIELD","BLR - GARUDA MALL","PUN - SOLITAIRE HUB BANER","MUM - NEXUS SEAWOOD MALL","NZM-PRAGATHI NAGAR","WRL-NAIMNAGAR","PUN - WESTEND MALL","DEL - DLF MIDTOWN MALL","HYD - KOKAPET","GUR - MGF METRO POLITIAN MALL","KHM WYRA ROAD","GTR - LAXMIPURAM","ONG - M M ROAD","RJM - DANVAIPETA","VIG - MADHURWADA","VIG - SIRIPURAM","VJW - GAYATHRI NAGAR","VJN - SRINIVASA NAGAR","VJW - M G ROAD","VIG - INORBIT MALL","HYD-KDP","HYD-AS RAO NAGAR","HYD-DSL MALL","HYD-KOTHAPET","HYD-VANASTHALIPURAM","HYD-PARKLANE","HYD-LNT MALL","HYD-JUBILLE","HYD-NEXUS MALL","HYD-Kukatpally","BIM-JP Road","KKN-RAMAROPET","HYD-SCC","CHN - MARINA MALL","CHN - ADYAR","CHN - EXPRESS AVENUE MALL","CHN - MOGAPPAIR WEST ROAD","CHN - PAPER MILL ROAD","CHN - PHOENIX MALL VELACHERY","Sheet143","SLM - SARADA COLLEGE ROAD","CHN - SELAIYUR","CHN - VELACHERY BYPASS ROAD","CHN - NEXUS VIJAYA MALL","HOS - AVALAPALLI","MDR - ANNA NAGAR","ERD - PERUNDURAI ROAD","CHN - VR MALL","TIR - PALLADAM MAIN ROAD","CBT - RS PURAM","CBT - BROOKFILED","TPL - KARUR BYPASS ROAD","HYD-IOM","HYD-KPL","HYD-LSM","HYD-NLG","HYD-GBH","TRP-AIR","ATP-CTR","KRL-BGN","HYD-ATTAPUR","NLR-MBR"];
-
-function numOrZero(v){const n=parseFloat(String(v==null?'':v).replace(/,/g,''));return isFinite(n)?n:0}
-
-function canonBrand(raw,knownSet){
-  const cleanRaw=raw.trim();
-  const normRaw=normKey(cleanRaw);
-  for(const kb of knownSet){if(normKey(kb)===normRaw)return kb}
-  for(const[re,canon]of BRAND_ALIASES){if(re.test(cleanRaw))return canon}
-  return cleanRaw.toUpperCase();
-}
-
-async function fetchStoreTab(tabName){
-  const url='https://docs.google.com/spreadsheets/d/'+SHEET_ID+'/gviz/tq?tqx=out:csv&sheet='+encodeURIComponent(tabName);
-  const res=await fetch(url,{cache:'no-store'});
-  if(!res.ok)throw new Error('HTTP '+res.status);
-  const rows=parseCSV(await res.text());
-  if(!rows.length)return[];
-  const header=rows[0];
-  const blocks=[];
-  for(let c=1;c<header.length;c+=8){
-    const label=(header[c]||'').replace(/\s+\d{4}-\d{2}\s*Bills\s*$/i,'').trim();
-    if(label)blocks.push({start:c,brand:label});
-  }
-  const out=[];
-  for(let i=1;i<rows.length;i++){
-    const row=rows[i];
-    const month=MONTH_LABELS[(row[0]||'').trim()];
-    if(!month)continue;
-    for(const b of blocks){
-      const ly=numOrZero(row[b.start+1]),cy=numOrZero(row[b.start+3]);
-      if(ly>0||cy>0)out.push({brand:b.brand,month,ly,cy});
-    }
-  }
-  return out;
-}
-
-async function mapLimit(items,limit,fn){
-  const out=new Array(items.length);
-  let i=0;
-  async function worker(){
-    while(i<items.length){const idx=i++;out[idx]=await fn(items[idx],idx)}
-  }
-  await Promise.all(Array.from({length:Math.min(limit,items.length)},worker));
-  return out;
-}
-
-function setSuspectFlags(rowsArr){
-  const groups={};
-  rowsArr.forEach((r,i)=>{const key=r[SH]+'||'+r[BR];(groups[key]=groups[key]||[]).push(i)});
-  for(const key in groups){
-    const idxs=groups[key];
-    for(const i of idxs){
-      const r=rowsArr[i],peers=[];
-      for(const j of idxs){if(j===i)continue;const rr=rowsArr[j];if(rr[LY]>0)peers.push(rr[LY]);if(rr[CY]>0)peers.push(rr[CY])}
-      const peerMax=peers.length?Math.max(...peers):0;
-      let flagged=false;
-      if(r[LY]>0&&r[CY]>0){const ratio=r[CY]/r[LY];if(ratio>=AUDIT_RATIO||ratio<=1/AUDIT_RATIO)flagged=true}
-      if(peerMax>=AUDIT_PEER_FLOOR){
-        if(r[LY]>0&&r[LY]<peerMax/AUDIT_MAG_FACTOR&&r[LY]<AUDIT_MAG_CEIL)flagged=true;
-        if(r[CY]>0&&r[CY]<peerMax/AUDIT_MAG_FACTOR&&r[CY]<AUDIT_MAG_CEIL)flagged=true;
-      }
-      if(flagged)r[SP]=1;
-    }
-  }
-}
-
-async function rebuildSalesData(){
-  const staticRowsBySH={};
-  for(const r of DATA){(staticRowsBySH[r[SH]]=staticRowsBySH[r[SH]]||[]).push(r.slice())}
-  const staticMetaBySH={},staticBrandsBySH={},shByNormName={};
-  for(const sh in staticRowsBySH){
-    const r0=staticRowsBySH[sh][0];
-    staticMetaBySH[sh]={nm:r0[NM],cd:r0[CD],rg:r0[RG],ct:r0[CT],fm:r0[FM],lf:r0[LF]};
-    staticBrandsBySH[sh]=new Set(staticRowsBySH[sh].map(r=>r[BR]));
-    shByNormName[normKey(sh)]=sh;
-  }
-  const newRows=[];
-  for(const sh in staticRowsBySH)newRows.push(...staticRowsBySH[sh]);
-
-  let ok=0,fail=0,done=0;
-  const note=document.getElementById('syncnote');
-  const results=await mapLimit(STORE_TABS,10,async(tabName)=>{
-    let out;
-    try{out={tabName,parsed:await fetchStoreTab(tabName)}}
-    catch(e){out={tabName,error:e}}
-    done++;
-    if(note)note.textContent=`Loading live sales data… (${done}/${STORE_TABS.length} store tabs)`;
-    return out;
-  });
-
-  for(const{tabName,parsed,error}of results){
-    if(error||!parsed||!parsed.length){fail++;continue}
-    ok++;
-    const matchedSH=shByNormName[normKey(tabName)]||tabName;
-    const meta=staticMetaBySH[matchedSH]||{nm:tabName.trim(),cd:'',rg:'—',ct:'—',fm:'—',lf:''};
-    const knownBrands=staticBrandsBySH[matchedSH]||new Set();
-    for(let i=newRows.length-1;i>=0;i--){if(newRows[i][SH]===matchedSH)newRows.splice(i,1)}
-    for(const p of parsed){
-      const brand=canonBrand(p.brand,knownBrands);
-      newRows.push([meta.nm,meta.cd,matchedSH,meta.rg,meta.ct,meta.fm,meta.lf,'','',brand,p.month,p.ly,p.cy,0]);
-    }
-  }
-  setSuspectFlags(newRows);
-  DATA.length=0;DATA.push(...newRows);
-  return{ok,fail,total:STORE_TABS.length};
-}
 // row: [master_name, code, sheet, region, city, format, lfl, cm, rm, brand, month, sales_ly, sales_cy, suspect]
 const NM=0,CD=1,SH=2,RG=3,CT=4,FM=5,LF=6,CM=7,RM=8,BR=9,MN=10,LY=11,CY=12,SP=13;
 const MO=['Apr','May','Jun'];
@@ -508,11 +393,9 @@ function renderAudit(){
 }
 function render(){renderHeader();if(tab==='stores')renderStores();else if(tab==='brands')renderBrands();else renderAudit();}
 (async function init(){
-  const salesSync=await rebuildSalesData();
-  const mgrSync=await loadStoreMaster();
+  const sync=await loadStoreMaster();
   const regions=[...new Set(DATA.map(r=>r[RG]))].sort();
   const rsel=document.getElementById('region');
-  rsel.innerHTML='<option value="">All regions</option>';
   for(const r of regions){const o=document.createElement('option');o.value=o.textContent=r;rsel.appendChild(o)}
   fillCity();fillMgr();
   rsel.addEventListener('change',()=>{fillCity();render()});
@@ -520,7 +403,7 @@ function render(){renderHeader();if(tab==='stores')renderStores();else if(tab===
   document.getElementById('q').addEventListener('input',render);
   render();
   const note=document.getElementById('syncnote');
-  if(note)note.textContent=`Sales data: ${salesSync.ok}/${salesSync.total} store sheets loaded live`+(salesSync.fail?` (${salesSync.fail} kept last saved figures)`:'')+`. Manager names: `+(mgrSync.ok?`synced live (${mgrSync.matched}/${mgrSync.total} rows matched)`:'could not reach the live sheet, showing last saved names')+'.';
+  if(note)note.textContent=sync.ok?`Cluster/regional manager names synced live from the store-master sheet (${sync.matched}/${sync.total} rows matched).`:'Could not reach the live store-master sheet — showing the last saved cluster/regional manager names.';
 })();
 </script>
 </body>
