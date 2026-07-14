@@ -77,6 +77,7 @@ th:first-child,td:first-child{text-align:left}
 td{padding:7px 8px;border-bottom:1px solid #EDF0F3;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
 td:first-child{font-family:var(--sans);font-weight:600}
 tr.kusrow td{background:var(--brassbg)}
+tr.auditrow td{background:var(--amberbg)}
 .g{color:var(--grow);font-weight:600}.r{color:var(--fall);font-weight:600}.mu{color:var(--slate)}
 .flag{color:var(--amber);cursor:help}
 .mini{font-size:12px;color:var(--slate);margin-top:8px}
@@ -116,6 +117,7 @@ tr.kusrow td{background:var(--brassbg)}
     <div class="tabs" role="tablist">
       <button role="tab" aria-selected="true" id="tab-stores" onclick="setTab('stores')">Stores</button>
       <button role="tab" aria-selected="false" id="tab-brands" onclick="setTab('brands')">Brands</button>
+      <button role="tab" aria-selected="false" id="tab-audit" onclick="setTab('audit')">Audit</button>
     </div>
     <div class="search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
       <input id="q" type="search" placeholder="Search store…" autocomplete="off">
@@ -141,6 +143,7 @@ tr.kusrow td{background:var(--brassbg)}
   <div class="count" id="count"></div>
   <div id="stores"></div>
   <div id="brands" class="brandgrid" style="display:none"></div>
+  <div id="audit" style="display:none"></div>
   <div class="footnote">
     <b>How to read this.</b> "Market" at a store = competitor brands tracked on that store's sheet, like-for-like. Growth % = (FY 26-27 ÷ FY 25-26) − 1 for April–June combined. The <b>SSSG</b> KPI uses only stores older than 2 years, so it is the clean same-store-sales-growth number for management. ⚠ = suspect entry, removed from market totals while the toggle is on; Kushals figures are never touched by the toggle. Region, city, format and store-age come from the store master (Book2); cluster manager (CM) and regional manager (RM) come from the INDEX sheet of the market update file. Two new stores (PDC Mission Street, PDC Providence Mall) have no last-year base yet and one market sheet (DEL DLF Midtown) is not in the store master — they show as "Not in store list". Merged brand spellings: Caratlane/Caretlane, Go Colours/Go Colors, BlueStone variants, Mia.
   <div id="syncnote" class="footnote" style="margin-top:8px;font-style:italic"></div>
@@ -342,13 +345,53 @@ function setTab(t){
   tab=t;
   document.getElementById('tab-stores').setAttribute('aria-selected',t==='stores');
   document.getElementById('tab-brands').setAttribute('aria-selected',t==='brands');
+  document.getElementById('tab-audit').setAttribute('aria-selected',t==='audit');
   document.getElementById('stores').style.display=t==='stores'?'':'none';
   document.getElementById('brands').style.display=t==='brands'?'':'none';
+  document.getElementById('audit').style.display=t==='audit'?'':'none';
   document.getElementById('verdict').style.display=t==='stores'?'':'none';
-  document.getElementById('q').placeholder=t==='stores'?'Search store, code or manager…':'Search brand… e.g. SOCH';
+  document.getElementById('q').placeholder=t==='stores'?'Search store, code or manager…':t==='brands'?'Search brand… e.g. SOCH':'Search store or brand…';
   render();
 }
-function render(){renderHeader();if(tab==='stores')renderStores();else renderBrands();}
+const AUDIT_RATIO=10,AUDIT_MAG_FACTOR=50,AUDIT_MAG_CEIL=100000,AUDIT_PEER_FLOOR=100000;
+function auditFindings(){
+  const groups={};
+  DATA.forEach((r,i)=>{const key=r[SH]+'||'+r[BR];(groups[key]=groups[key]||[]).push(i)});
+  const out=[];
+  for(const key in groups){
+    const idxs=groups[key];
+    for(const i of idxs){
+      const r=DATA[i],reasons=[];
+      const peers=[];
+      for(const j of idxs){if(j===i)continue;const rr=DATA[j];if(rr[LY]>0)peers.push(rr[LY]);if(rr[CY]>0)peers.push(rr[CY])}
+      const peerMax=peers.length?Math.max(...peers):0;
+      if(r[LY]>0&&r[CY]>0){
+        const ratio=r[CY]/r[LY];
+        if(ratio>=AUDIT_RATIO)reasons.push('This year is '+ratio.toFixed(0)+'× last year');
+        else if(ratio<=1/AUDIT_RATIO)reasons.push('Last year is '+(1/ratio).toFixed(0)+'× this year');
+      }
+      if(peerMax>=AUDIT_PEER_FLOOR){
+        if(r[LY]>0&&r[LY]<peerMax/AUDIT_MAG_FACTOR&&r[LY]<AUDIT_MAG_CEIL)reasons.push('Last Year value looks like a bare number, not '+inr(peerMax).replace('₹',''));
+        if(r[CY]>0&&r[CY]<peerMax/AUDIT_MAG_FACTOR&&r[CY]<AUDIT_MAG_CEIL)reasons.push('This Year value looks like a bare number, not '+inr(peerMax).replace('₹',''));
+      }
+      if(r[SP]===1)reasons.push('Marked suspect in source data');
+      if(reasons.length)out.push({r,reasons,diff:r[CY]-r[LY]});
+    }
+  }
+  return out.sort((a,b)=>Math.abs(b.diff)-Math.abs(a.diff));
+}
+function renderAudit(){
+  const q=val('q').trim().toLowerCase();
+  let list=auditFindings();
+  if(q)list=list.filter(x=>(x.r[NM]+' '+x.r[BR]).toLowerCase().includes(q));
+  document.getElementById('count').textContent=`${list.length} flagged entr${list.length===1?'y':'ies'} · likely unit or typo mismatches between Last Year and This Year figures, worst first`;
+  const el=document.getElementById('audit');
+  if(!list.length){el.innerHTML='<div class="empty">No suspicious value jumps found in the current data.</div>';return}
+  el.innerHTML=`<table><thead><tr><th>Store</th><th>Brand</th><th>Month</th><th>Last Year</th><th>This Year</th><th>Difference</th><th style="text-align:left">Why flagged</th></tr></thead><tbody>
+    ${list.map(x=>`<tr class="auditrow"><td>${x.r[NM]}</td><td>${x.r[BR]}</td><td>${x.r[MN]}</td><td>${inr(x.r[LY])}</td><td>${inr(x.r[CY])}</td><td class="${x.diff<0?'r':'g'}">${x.diff<0?'−':'+'}${inr(Math.abs(x.diff))}</td><td style="text-align:left;font-family:var(--sans)"><span class="flag">⚠</span> ${x.reasons.join('; ')}</td></tr>`).join('')}
+    </tbody></table>`;
+}
+function render(){renderHeader();if(tab==='stores')renderStores();else if(tab==='brands')renderBrands();else renderAudit();}
 (async function init(){
   const sync=await loadStoreMaster();
   const regions=[...new Set(DATA.map(r=>r[RG]))].sort();
